@@ -1,0 +1,11 @@
+packages: *.cabal
+with-compiler: /home/matteo/Desktop/ghc-9.8.2/_build/stage1/bin/ghc
+
+static: true
+executable-static: true
+
+shared: false
+executable-dynamic: false
+
+package *
+  ghc-options:  -pgmc /usr/local/bin/afl-clang-fast -pgml /usr/local/bin/afl-clang-fast
