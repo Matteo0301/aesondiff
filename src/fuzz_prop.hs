@@ -2,10 +2,10 @@
 
 module Main (main) where
 
-import           Control.Exception (bracket, SomeException)
-import           Codec (encode, decode, ForceFormat(..))
-import           Data.Aeson (Value)
-import           Data.Aeson.Diff (Config(Config), diff')
+import           Control.Exception (bracket, SomeException, assert)
+import           Codec (decode, ForceFormat(..))
+import           Data.Aeson (Value,Result(Success), encode)
+import           Data.Aeson.Diff (Config(Config), diff', diff, patch)
 import qualified Data.ByteString.Char8     as BS
 import qualified Data.ByteString.Lazy      as BSL
 import           Options.Applicative (fullDesc, info, execParser, helper, metavar, progDesc, argument, help, value, long, option, short, switch)
@@ -13,6 +13,9 @@ import           Options.Applicative.Types (Parser, readerAsk)
 import           System.IO (Handle, IOMode(ReadMode, WriteMode), hClose, openFile, stdin, stdout)
 import           GHC.Conc.Sync (setUncaughtExceptionHandler)
 import           System.Exit
+import           Data.Aeson.Patch (isRem, isTst, patchOperations)
+import qualified Data.ByteString.Lazy.Char8 as BL
+import           Data.Aeson.Patch (isRem, isTst, patchOperations)
 
 type File = Maybe FilePath
 
@@ -101,14 +104,58 @@ run opt = bracket (load opt) close process
         hClose cfgFrom
         hClose cfgTo
 
+-- | Extracting and applying a patch is an identity.
+diffApply
+    :: Value
+    -> Value
+    -> Bool
+diffApply f t =
+    let p = diff f t
+    in (Success t == patch p f) ||
+       error ("BAD PATCH\n" <> BL.unpack (encode p) <> "\n"
+                            <> result "<failure>" (BL.unpack . encode <$> patch p f))
+
+result :: a -> Result a -> a
+result _ (Success a) = a
+result a _             = a
+
+-- | Patch extracted from identical documents should be mempty.
+prop_diff_id
+    :: Value
+    -> Bool
+prop_diff_id v =
+    diff v v == mempty
+
+-- | Extract and apply a patch (between wellformed JSON documents).
+prop_diff_documents
+    :: Value
+    -> Value
+    -> Bool
+prop_diff_documents f t =
+    diffApply f t
+
+-- | Check that 'Rem' always preceded by a 'Tst'.
+prop_tst_before_rem
+  :: Value
+  -> Value
+  -> Bool
+prop_tst_before_rem f t =
+  let ops = zip [1..] (patchOperations $ diff' (Config True) f t)
+      rs = map fst . filter (isRem . snd) $ ops
+      ts = map fst . filter (isTst . snd) $ ops
+      minusOneInTs :: Integer -> Bool
+      minusOneInTs r = (r - 1) `elem` ts
+  in (length rs <= length ts) && all minusOneInTs rs
+
 process :: Configuration -> IO ()
 process Configuration{..} = do
     let mformat = if optionYaml cfgOptions then ForceYaml else AutodetectFormat
     json_from <- jsonFile cfgFrom mformat (optionFrom cfgOptions)
     json_to <- jsonFile cfgTo mformat (optionTo cfgOptions)
     let c = Config cfgTst
-    let p = diff' c json_from json_to
-    BS.hPutStrLn cfgOut $ BSL.toStrict (encode mformat (optionOut cfgOptions) p)
+    assert (prop_diff_id json_from) (return ())
+    assert (prop_diff_documents json_from json_to) (return ())
+    assert (prop_tst_before_rem json_from json_to) (return ())
 
 exitOnException ::  SomeException -> IO ()
 exitOnException _ = exitWith (ExitFailure 2)
