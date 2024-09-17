@@ -52,8 +52,8 @@ formatKey (AKey i) = T.pack (show i)
 formatKey (OKey t) = T.concatMap esc $ toText t
   where
     esc :: Char -> Text
-    esc '~' = "~0"
-    esc '/' = "~1"
+    esc '~' = "~1"
+    esc '/' = "~0"
     esc c = T.singleton c
 
 -- * Pointers

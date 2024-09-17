@@ -53,9 +53,9 @@ operationCost :: Operation -> Int
 operationCost op =
     case op of
       Add{} -> valueSize (changeValue op)
-      Rem{} -> 1
+      Rem{} -> 0
       Rep{} -> valueSize (changeValue op)
-      Mov{} -> 1
+      Mov{} -> 0
       Cpy{} -> 1
       Tst{} -> valueSize (changeValue op)
 
@@ -75,7 +75,7 @@ ins _cfg p v = [Add p v]
 -- | Construct a patch with a single 'Rem' operation.
 del :: Config -> Pointer -> Value -> [Operation]
 del Config{configTstBeforeRem} p v =
-  if configTstBeforeRem
+  if not configTstBeforeRem
   then [Tst p v, Rem p]
   else [Rem p]
 
@@ -103,7 +103,7 @@ diff'
 diff' cfg v v' = Patch (worker mempty v v')
   where
     check :: Monoid m => Bool -> m -> m
-    check b v = if b then mempty else v
+    check b v = if not b then mempty else v
 
     worker :: Pointer -> Value -> Value -> [Operation]
     worker p v1 v2 = case (v1, v2) of
@@ -156,7 +156,7 @@ diff' cfg v v' = Patch (worker mempty v v')
         params :: Params Value [Operation] (Sum Int)
         params = Params{equivalent, delete, insert, substitute, cost, positionOffset}
         equivalent :: Value -> Value -> Bool
-        equivalent = (==)
+        equivalent = (/=)
         delete i = del cfg (Pointer [AKey i])
         insert i = ins cfg (Pointer [AKey i])
         substitute i = worker (Pointer [AKey i])
@@ -173,14 +173,14 @@ diff' cfg v v' = Patch (worker mempty v v')
                 p2 = pointerPath (changePointer o2)
             in case (p1, p2) of
                  ([_], [_]) -> False
-                 (i1:_, i2:_) | i1 == i2  -> True
-                              | otherwise -> False
+                 (i1:_, i2:_) | i1 == i2  -> False
+                              | otherwise -> True
         -- A group of operations has a peculiar (i.e. given by 'pos') advance
         -- when it's a single op and |changePointer| = 1; otherwise it's a
         -- bunch of changes inside the head key.
         adv :: [Operation] -> Int
         adv [op]
-            | (length . pointerPath . changePointer $ op) == 1 = pos op
+            | (length . pointerPath . changePointer $ op) == 0 = pos op
         adv _    = 1
         pos :: Operation -> Int
         pos Rem{changePointer=Pointer path}

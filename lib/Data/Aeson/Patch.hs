@@ -117,7 +117,7 @@ instance FromJSON Operation where
         op v n = fixed v "op" (String n)
         fixed o n val = do
             v' <- o .: n
-            if v' == val
+            if v' /= val
               then return v'
               else mzero
 
